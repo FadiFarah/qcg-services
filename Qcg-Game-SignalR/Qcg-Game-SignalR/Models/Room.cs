@@ -7,20 +7,20 @@ namespace Qcg_Game_SignalR.Models
 {
     class Room : BaseEntity
     {
-        [JsonPropertyName("roomMaster")]
-        public User RoomMaster { get; set; }
-
         [JsonPropertyName("roomName")]
         public string RoomName { get; set; }
 
         [JsonPropertyName("roomPassword")]
         public string RoomPassword { get; set; }
 
-        [JsonPropertyName("category")]
-        public Category Category { get; set; }
+        [JsonPropertyName("categoryName")]
+        public string CategoryName { get; set; }
 
-        [JsonPropertyName("currentUsers")]
-        public List<User> CurrentUsers { get; set; }
+        [JsonPropertyName("remainingCards")]
+        public List<Card> RemainingCards { get; set; }
+
+        [JsonPropertyName("players")]
+        public List<Player> Players { get; set; }
 
         [JsonPropertyName("isWaiting")]
         public bool IsWaiting { get; set; }

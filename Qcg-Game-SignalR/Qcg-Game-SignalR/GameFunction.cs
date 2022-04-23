@@ -125,12 +125,12 @@ namespace Qcg_Game_SignalR
                             client = ConnectedClients.Find(client => client.ConnectionId == data.ConnectionId);
                             if (client != null)
                             {
-                                var itemToRemove = room.CurrentUsers.FirstOrDefault(u => u._id == client.UserId);
-                                room.CurrentUsers.Remove(itemToRemove);
+                                var itemToRemove = room.Players?.FirstOrDefault(player => player.UserId == client.UserId);
+                                room.Players?.Remove(itemToRemove);
                                 var body = JsonConvert.SerializeObject(room);
                                 log.LogInformation(body);
                                 var requestContent = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
-                                if (room.CurrentUsers.Count > 0)
+                                if (room.Players.Count > 0)
                                     await httpClient.PutAsync("https://fast-mesa-26421.herokuapp.com/room/" + item.Key, requestContent);
                                 else
                                     await httpClient.DeleteAsync("https://fast-mesa-26421.herokuapp.com/room/" + item.Key);
@@ -181,11 +181,21 @@ namespace Qcg_Game_SignalR
             }
             Response<Room> getRoomResponse = await httpClient.GetFromJsonAsync<Response<Room>>("https://fast-mesa-26421.herokuapp.com/room/" + bodyDetails.RoomId);
             Room room = getRoomResponse.Data;
-            logger.LogInformation(room.RoomName);
             if (room != null)
             {
                 Response<User> getUserResponse = await httpClient.GetFromJsonAsync<Response<User>>("https://fast-mesa-26421.herokuapp.com/user/" + bodyDetails.UserId);
-                room.CurrentUsers.Add(getUserResponse.Data);
+                User user = getUserResponse.Data;
+                room.Players.Add(new Player { 
+                    UserId = bodyDetails.UserId,
+                    Cards = new List<Card>(),
+                    FullName = user.FirstName + " " + user.LastName,
+                    Picture = user.Picture,
+                    IsMaster = room.Players?.Count == 0 ? true : false,
+                    IsReady = false,
+                    IsTurn = false,
+                    IsWin = false,
+                    Points = 0
+                });
                 var body = JsonConvert.SerializeObject(room);
                 var requestContent = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
                 await httpClient.PutAsync("https://fast-mesa-26421.herokuapp.com/room/" + bodyDetails.RoomId, requestContent);
