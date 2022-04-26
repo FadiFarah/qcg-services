@@ -53,6 +53,18 @@ namespace Qcg_Game_SignalR
 
             [JsonPropertyName("connectionId")]
             public string ConnectionId { get; set; }
+
+            [JsonPropertyName("categoryGroup")]
+            public string CategoryGroup { get; set; }
+
+            [JsonPropertyName("cardName")]
+            public string CardName { get; set; }
+
+            [JsonPropertyName("fromPlayerUserId")]
+            public string FromPlayerUserId { get; set; }
+
+            [JsonPropertyName("toPlayerUserId")]
+            public string ToPlayerUserId { get; set; }
         }
 
         private class Response<T>
@@ -261,6 +273,67 @@ namespace Qcg_Game_SignalR
                 {
                     Target = "newChatMessage",
                     Arguments = new[] { bodyDetails.FullName, bodyDetails.ChatMessage },
+                    GroupName = bodyDetails.RoomId,
+                });
+        }
+
+        [FunctionName("cardRequestFromPlayer")]
+        public async Task CardRequestFromPlayer([HttpTrigger(AuthorizationLevel.Anonymous, "post")] HttpRequest req,
+        [SignalR(HubName = "gameHub")]
+        IAsyncCollector<SignalRMessage> signalRMessages, ILogger logger)
+        {
+            string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+            Body bodyDetails = JsonConvert.DeserializeObject<Body>(requestBody);
+
+            string cardFound = "0";
+
+            Response<Room> getRoomResponse = await httpClient.GetFromJsonAsync<Response<Room>>("https://fast-mesa-26421.herokuapp.com/room/" + bodyDetails.RoomId);
+            Room room = getRoomResponse.Data;
+
+            Player toPlayer = room.Players.Find(p => p.UserId == bodyDetails.ToPlayerUserId);
+
+            Player fromPlayer = room.Players.Find(p => p.UserId == bodyDetails.FromPlayerUserId);
+
+            if (toPlayer != null && fromPlayer != null)
+            {
+                Card card = toPlayer.Cards.Find(c => c.CategoryGroup == bodyDetails.CategoryGroup && c.CardName == bodyDetails.CardName);
+
+                if (card != null)
+                {
+                    toPlayer.Cards.Remove(card);
+
+                    fromPlayer.Cards.Add(card);
+
+                    fromPlayer.IsTurn = true;
+
+                    cardFound = "1";
+                }
+
+                else
+                {
+                    fromPlayer.IsTurn = false;
+                    toPlayer.IsTurn = true;
+                }
+
+                var indexOfFromPlayer = room.Players.IndexOf(fromPlayer);
+                var indexOfToPlayer = room.Players.IndexOf(toPlayer);
+
+                logger.LogInformation(indexOfToPlayer.ToString());
+                logger.LogInformation(indexOfFromPlayer.ToString());
+                room.Players[indexOfFromPlayer] = fromPlayer;
+                room.Players[indexOfToPlayer] = toPlayer;
+                logger.LogInformation(room.ToString());
+
+                var body = JsonConvert.SerializeObject(room);
+                var requestContent = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
+                await httpClient.PutAsync("https://fast-mesa-26421.herokuapp.com/room/" + bodyDetails.RoomId, requestContent);
+            }
+
+            await signalRMessages.AddAsync(
+                new SignalRMessage
+                {
+                    Target = "playersCardsUpdated",
+                    Arguments = new[] { bodyDetails.RoomId, bodyDetails.CategoryGroup, bodyDetails.CardName, bodyDetails.FromPlayerUserId, bodyDetails.ToPlayerUserId, cardFound },
                     GroupName = bodyDetails.RoomId,
                 });
         }
