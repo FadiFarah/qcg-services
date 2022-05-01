@@ -65,6 +65,9 @@ namespace Qcg_Game_SignalR
 
             [JsonPropertyName("toPlayerUserId")]
             public string ToPlayerUserId { get; set; }
+
+            [JsonPropertyName("card")]
+            public Card Card { get; set; }
         }
 
         private class Response<T>
@@ -276,6 +279,25 @@ namespace Qcg_Game_SignalR
                     GroupName = bodyDetails.RoomId,
                 });
         }
+
+        [FunctionName("cardRequestNotify")]
+        public async Task cardRequestNotify([HttpTrigger(AuthorizationLevel.Anonymous, "post")] HttpRequest req,
+        [SignalR(HubName = "gameHub")]
+        IAsyncCollector<SignalRMessage> signalRMessages, ILogger logger)
+        {
+            string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+            Body bodyDetails = JsonConvert.DeserializeObject<Body>(requestBody);
+            var card = JsonConvert.SerializeObject(new { card = bodyDetails.Card });
+
+            await signalRMessages.AddAsync(
+                new SignalRMessage
+                {
+                    Target = "cardRequestNotify",
+                    Arguments = new[] { bodyDetails.ConnectionId, bodyDetails.FromPlayerUserId, bodyDetails.ToPlayerUserId, card },
+                    GroupName = bodyDetails.RoomId,
+                });
+        }
+
 
         [FunctionName("cardRequestFromPlayer")]
         public async Task CardRequestFromPlayer([HttpTrigger(AuthorizationLevel.Anonymous, "post")] HttpRequest req,
