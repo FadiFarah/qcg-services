@@ -33,5 +33,8 @@ namespace Qcg_Game_SignalR.Models
 
         [JsonPropertyName("points")]
         public int Points { get; set; }
+
+        [JsonPropertyName("isDonePlaying")]
+        public bool IsDonePlaying { get; set; }
     }
 }

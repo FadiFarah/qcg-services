@@ -141,7 +141,25 @@ namespace Qcg_Game_SignalR
                             if (client != null)
                             {
                                 var itemToRemove = room.Players?.FirstOrDefault(player => player.UserId == client.UserId);
+                                if(itemToRemove.Cards.Count > 0)
+                                {
+                                    room.RemainingCards.AddRange(itemToRemove.Cards);
+                                }
+                                
                                 room.Players?.Remove(itemToRemove);
+
+                                if (room.Players.Count > 0)
+                                {
+                                    if (itemToRemove.IsTurn)
+                                    {
+                                        room.Players[0].IsTurn = true;
+                                    }
+                                    if (itemToRemove.IsMaster)
+                                    {
+                                        room.Players[0].IsMaster = true;
+                                    }
+                                }
+
                                 var body = JsonConvert.SerializeObject(room);
                                 log.LogInformation(body);
                                 var requestContent = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
@@ -207,8 +225,9 @@ namespace Qcg_Game_SignalR
                     Picture = user.Picture,
                     IsMaster = room.Players?.Count == 0 ? true : false,
                     IsReady = false,
-                    IsTurn = false,
+                    IsTurn = room.Players?.Count == 0 ? true : false,
                     IsWin = false,
+                    IsDonePlaying = false,
                     Points = 0
                 });
                 var body = JsonConvert.SerializeObject(room);
@@ -287,13 +306,20 @@ namespace Qcg_Game_SignalR
         {
             string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
             Body bodyDetails = JsonConvert.DeserializeObject<Body>(requestBody);
-            var card = JsonConvert.SerializeObject(new { card = bodyDetails.Card });
+            var card = JsonConvert.SerializeObject(bodyDetails.Card);
+            Response<Room> getRoomResponse = await httpClient.GetFromJsonAsync<Response<Room>>("https://fast-mesa-26421.herokuapp.com/room/" + bodyDetails.RoomId);
+            Room room = getRoomResponse.Data;
+            string players = "";
+            if (room != null)
+            {
+                players = JsonConvert.SerializeObject(room.Players);
+            }
 
             await signalRMessages.AddAsync(
                 new SignalRMessage
                 {
                     Target = "cardRequestNotify",
-                    Arguments = new[] { bodyDetails.ConnectionId, bodyDetails.FromPlayerUserId, bodyDetails.ToPlayerUserId, card },
+                    Arguments = new[] { bodyDetails.ConnectionId, bodyDetails.FromPlayerUserId, bodyDetails.ToPlayerUserId, card, players },
                     GroupName = bodyDetails.RoomId,
                 });
         }
@@ -323,11 +349,36 @@ namespace Qcg_Game_SignalR
                 if (card != null)
                 {
                     toPlayer.Cards.Remove(card);
-
+                    if(toPlayer.Cards.Count == 0)
+                    {
+                        toPlayer.IsDonePlaying = true;
+                    }
                     fromPlayer.Cards.Add(card);
 
+                    List<Card> cardOfCategoryGroup = fromPlayer.Cards.FindAll(card => card.CategoryGroup == bodyDetails.CategoryGroup);
+                    if(cardOfCategoryGroup.Count == 4)
+                    {
+                        fromPlayer.Cards.RemoveAll(card => card.CategoryGroup == bodyDetails.CategoryGroup);
+                        fromPlayer.Points++;
+                        room.TotalPoints++;
+                        
+                        if(fromPlayer.Cards.Count == 0)
+                        {
+                            if (room.RemainingCards.Count > 0)
+                            {
+                                Random rnd = new Random();
+                                int index = rnd.Next(room.RemainingCards.Count);
+                                fromPlayer.Cards.Add(room.RemainingCards[index]);
+                                room.RemainingCards.RemoveAt(index);
+                            }
+                            else
+                            {
+                                fromPlayer.IsDonePlaying = true;
+                            }
+                        }
+                        
+                    }
                     fromPlayer.IsTurn = true;
-
                     cardFound = "1";
                 }
 
@@ -335,6 +386,13 @@ namespace Qcg_Game_SignalR
                 {
                     fromPlayer.IsTurn = false;
                     toPlayer.IsTurn = true;
+                    if (room.RemainingCards.Count > 0)
+                    {
+                        Random rnd = new Random();
+                        int index = rnd.Next(room.RemainingCards.Count);
+                        fromPlayer.Cards.Add(room.RemainingCards[index]);
+                        room.RemainingCards.RemoveAt(index);
+                    }
                 }
 
                 var indexOfFromPlayer = room.Players.IndexOf(fromPlayer);
