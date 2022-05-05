@@ -158,6 +158,18 @@ namespace Qcg_Game_SignalR
                                     {
                                         room.Players[0].IsMaster = true;
                                     }
+                                    if(room.Players.Count == 1 && !room.IsWaiting)
+                                    {
+                                        room.IsGameOver = true;
+                                        room.Players[0].IsWin = true;
+                                        room.Players[0].IsReady = false;
+                                        Response<User> getUserResponse = await httpClient.GetFromJsonAsync<Response<User>>("https://fast-mesa-26421.herokuapp.com/user/" + room.Players[0].UserId);
+                                        User user = getUserResponse.Data;
+                                        user.Score++;
+                                        var userBody = JsonConvert.SerializeObject(user);
+                                        var userRequestContent = new StringContent(userBody, System.Text.Encoding.UTF8, "application/json");
+                                        await httpClient.PutAsync("https://fast-mesa-26421.herokuapp.com/user/" + room.Players[0].UserId, userRequestContent);
+                                    }
                                 }
 
                                 var body = JsonConvert.SerializeObject(room);
@@ -224,7 +236,7 @@ namespace Qcg_Game_SignalR
                     FullName = user.FirstName + " " + user.LastName,
                     Picture = user.Picture,
                     IsMaster = room.Players?.Count == 0 ? true : false,
-                    IsReady = false,
+                    IsReady = true,
                     IsTurn = room.Players?.Count == 0 ? true : false,
                     IsWin = false,
                     IsDonePlaying = false,
@@ -351,18 +363,48 @@ namespace Qcg_Game_SignalR
                     toPlayer.Cards.Remove(card);
                     if(toPlayer.Cards.Count == 0)
                     {
-                        toPlayer.IsDonePlaying = true;
+                        if (room.RemainingCards.Count > 0)
+                        {
+                            Random rnd = new Random();
+                            int index = rnd.Next(room.RemainingCards.Count);
+                            toPlayer.Cards.Add(room.RemainingCards[index]);
+                            room.RemainingCards.RemoveAt(index);
+                        }
+                        else
+                        {
+                            toPlayer.IsDonePlaying = true;
+                        }
                     }
                     fromPlayer.Cards.Add(card);
 
-                    List<Card> cardOfCategoryGroup = fromPlayer.Cards.FindAll(card => card.CategoryGroup == bodyDetails.CategoryGroup);
+                    List<Card> cardOfCategoryGroup = new List<Card>(fromPlayer.Cards.FindAll(card => card.CategoryGroup == bodyDetails.CategoryGroup));
                     if(cardOfCategoryGroup.Count == 4)
                     {
                         fromPlayer.Cards.RemoveAll(card => card.CategoryGroup == bodyDetails.CategoryGroup);
                         fromPlayer.Points++;
                         room.TotalPoints++;
-                        
-                        if(fromPlayer.Cards.Count == 0)
+
+                        if (room.TotalPoints == 9)
+                        {
+                            room.IsGameOver = true;
+                            int maxPoints = room.Players.Max(player => player.Points);
+                            for(int i=0; i< room.Players.Count; i++)
+                            {
+                                room.Players[i].IsReady = false;
+                                if(room.Players[i].Points == maxPoints)
+                                {
+                                    room.Players[i].IsWin = true;
+                                    Response<User> getUserResponse = await httpClient.GetFromJsonAsync<Response<User>>("https://fast-mesa-26421.herokuapp.com/user/" + room.Players[i].UserId);
+                                    User user = getUserResponse.Data;
+                                    user.Score++;
+                                    var userBody = JsonConvert.SerializeObject(user);
+                                    var userRequestContent = new StringContent(userBody, System.Text.Encoding.UTF8, "application/json");
+                                    await httpClient.PutAsync("https://fast-mesa-26421.herokuapp.com/user/" + room.Players[i].UserId, userRequestContent);
+                                }
+                            }
+                        }
+
+                        if (fromPlayer.Cards.Count == 0)
                         {
                             if (room.RemainingCards.Count > 0)
                             {
@@ -416,6 +458,82 @@ namespace Qcg_Game_SignalR
                     Arguments = new[] { bodyDetails.RoomId, bodyDetails.CategoryGroup, bodyDetails.CardName, bodyDetails.FromPlayerUserId, bodyDetails.ToPlayerUserId, cardFound },
                     GroupName = bodyDetails.RoomId,
                 });
+        }
+
+        [FunctionName("pullCardFromMiddleDeck")]
+        public async Task PullCardFromMiddleDeck([HttpTrigger(AuthorizationLevel.Anonymous, "post")] HttpRequest req,
+        [SignalR(HubName = "gameHub")]
+        IAsyncCollector<SignalRMessage> signalRMessages, ILogger logger)
+        {
+            string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+            Body bodyDetails = JsonConvert.DeserializeObject<Body>(requestBody);
+
+            Response<Room> getRoomResponse = await httpClient.GetFromJsonAsync<Response<Room>>("https://fast-mesa-26421.herokuapp.com/room/" + bodyDetails.RoomId);
+            Room room = getRoomResponse.Data;
+
+            if (room != null)
+            {
+                var playerIndex = room.Players.FindIndex(player => player.UserId == bodyDetails.UserId);
+                if(room.RemainingCards.Count > 0)
+                {
+                    Random rnd = new Random();
+                    int randomNum = rnd.Next(room.RemainingCards.Count);
+                    room.Players[playerIndex].Cards.Add(room.RemainingCards[randomNum]);
+                    var categoryGroup = room.RemainingCards[randomNum].CategoryGroup;
+                    room.RemainingCards.RemoveAt(randomNum);
+
+                    List<Card> cardOfCategoryGroup = room.Players[playerIndex].Cards.FindAll(card => card.CategoryGroup == categoryGroup);
+                    logger.LogInformation(cardOfCategoryGroup.Count.ToString());
+                    if (cardOfCategoryGroup.Count == 4)
+                    {
+                        logger.LogInformation(room.Players[playerIndex].Cards.Count.ToString());
+
+                        room.Players[playerIndex].Cards.RemoveAll(card => card.CategoryGroup == categoryGroup);
+                        room.Players[playerIndex].Points++;
+                        logger.LogInformation(room.Players[playerIndex].Cards.Count.ToString());
+                        room.TotalPoints++;
+
+                        if(room.TotalPoints == 9)
+                        {
+                            room.IsGameOver = true;
+                            int maxPoints = room.Players.Max(player => player.Points);
+                            for (int i = 0; i < room.Players.Count; i++)
+                            {
+                                room.Players[i].IsReady = false;
+                                if (room.Players[i].Points == maxPoints)
+                                {
+                                    room.Players[i].IsWin = true;
+                                    Response<User> getUserResponse = await httpClient.GetFromJsonAsync<Response<User>>("https://fast-mesa-26421.herokuapp.com/user/" + room.Players[i].UserId);
+                                    User user = getUserResponse.Data;
+                                    user.Score++;
+                                    var userBody = JsonConvert.SerializeObject(user);
+                                    var userRequestContent = new StringContent(userBody, System.Text.Encoding.UTF8, "application/json");
+                                    await httpClient.PutAsync("https://fast-mesa-26421.herokuapp.com/user/" + room.Players[i].UserId, userRequestContent);
+                                }
+                            }
+                        }
+
+                        if (room.Players[playerIndex].Cards.Count == 0)
+                        {
+                            if (room.RemainingCards.Count > 0)
+                            {
+                                int index = rnd.Next(room.RemainingCards.Count);
+                                room.Players[playerIndex].Cards.Add(room.RemainingCards[index]);
+                                room.RemainingCards.RemoveAt(index);
+                            }
+                            else
+                            {
+                                room.Players[playerIndex].IsDonePlaying = true;
+                            }
+                        }
+
+                    }
+                }
+            }
+
+            var body = JsonConvert.SerializeObject(room);
+            var requestContent = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
+            await httpClient.PutAsync("https://fast-mesa-26421.herokuapp.com/room/" + bodyDetails.RoomId, requestContent);
         }
     }
 }
