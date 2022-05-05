@@ -28,6 +28,9 @@ namespace Qcg_Game_SignalR.Models
         [JsonPropertyName("isPublic")]
         public bool IsPublic { get; set; }
 
+        [JsonPropertyName("isGameOver")]
+        public bool IsGameOver { get; set; }
+
         [JsonPropertyName("totalPoints")]
         public int TotalPoints { get; set; }
     }

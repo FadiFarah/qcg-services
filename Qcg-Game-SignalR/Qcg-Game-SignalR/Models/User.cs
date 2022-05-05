@@ -33,5 +33,8 @@ namespace Qcg_Game_SignalR.Models
 
         [JsonPropertyName("password")]
         public string Password { get; set; }
+
+        [JsonPropertyName("score")]
+        public int Score { get; set; }
     }
 }
