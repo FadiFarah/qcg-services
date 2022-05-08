@@ -474,6 +474,16 @@ namespace Qcg_Game_SignalR
             if (room != null)
             {
                 var playerIndex = room.Players.FindIndex(player => player.UserId == bodyDetails.UserId);
+                room.Players[playerIndex].IsTurn = false;
+                if (playerIndex == (room.Players.Count - 1))
+                {
+                    room.Players[0].IsTurn = true;
+                }
+                else
+                {
+                    room.Players[playerIndex + 1].IsTurn = true;
+                }
+
                 if(room.RemainingCards.Count > 0)
                 {
                     Random rnd = new Random();
